@@ -3,7 +3,7 @@
  * Plugin Name: Lorem Blaster
  * Plugin URI: https://github.com/NaveenKharwar/lorem-blaster/blob/main/README.md
  * Description: Generate block-based sample posts, pages, products, or custom post types with full control over length, images, and taxonomies.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Naveen Kharwar
  * License: GPLv2 or later
  * Text Domain: lorem-blaster
@@ -39,7 +39,7 @@ class Lorem_Blaster {
 			'lorem-blaster-admin',
 			plugin_dir_url( __FILE__ ) . 'assets/admin.css',
 			array(),
-			'1.0.0'
+			'1.0.1'
 		);
 	}
 
@@ -290,11 +290,12 @@ class Lorem_Blaster {
 	 * --------------------------------------------------------- */
 
 	public function handle_generate() {
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You are not allowed to do this action.', 'lorem-blaster' ) );
+		// Check if this is a POST request
+		if ( 'POST' !== $_SERVER['REQUEST_METHOD'] ) {
+			wp_die( esc_html__( 'Invalid request method.', 'lorem-blaster' ) );
 		}
 
+		// Verify nonce FIRST before processing any $_POST data
 		$raw_nonce = isset( $_POST['lorem_blaster_nonce_field'] )
 			? sanitize_text_field( wp_unslash( $_POST['lorem_blaster_nonce_field'] ) )
 			: '';
@@ -303,29 +304,39 @@ class Lorem_Blaster {
 			wp_die( esc_html__( 'Security check failed.', 'lorem-blaster' ) );
 		}
 
+		// Check user permissions AFTER nonce verification
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to do this action.', 'lorem-blaster' ) );
+		}
+
+		// Load media dependencies only when needed
 		$this->load_media_dependencies();
 
-		$post_data  = wp_unslash( $_POST );
-		$count      = max( 1, min( 100, absint( $post_data['count'] ?? 5 ) ) );
-		$char_limit = max( 50, min( 5000, absint( $post_data['char_limit'] ?? 500 ) ) );
-		$source     = sanitize_key( $post_data['source'] ?? 'lorem' );
-		$post_type  = sanitize_key( $post_data['post_type'] ?? 'post' );
-		$image_src  = sanitize_key( $post_data['image_source'] ?? 'picsum' );
+		// Process ONLY the specific fields needed (not the whole $_POST)
+		$count      = isset( $_POST['count'] ) ? max( 1, min( 100, absint( $_POST['count'] ) ) ) : 5;
+		$char_limit = isset( $_POST['char_limit'] ) ? max( 50, min( 5000, absint( $_POST['char_limit'] ) ) ) : 500;
+		$source     = isset( $_POST['source'] ) ? sanitize_key( wp_unslash( $_POST['source'] ) ) : 'lorem';
+		$post_type  = isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( $_POST['post_type'] ) ) : 'post';
+		$image_src  = isset( $_POST['image_source'] ) ? sanitize_key( wp_unslash( $_POST['image_source'] ) ) : 'picsum';
 
+		// Validate source
 		$allowed_sources = array( 'lorem', 'bacon', 'hipster', 'dummyjson' );
 		if ( ! in_array( $source, $allowed_sources, true ) ) {
 			$source = 'lorem';
 		}
 
+		// Validate image source
 		$allowed_images = array( 'picsum', 'unsplash', 'placehold' );
 		if ( ! in_array( $image_src, $allowed_images, true ) ) {
 			$image_src = 'picsum';
 		}
 
+		// Validate post type
 		if ( ! post_type_exists( $post_type ) ) {
 			wp_die( esc_html__( 'Invalid post type selected.', 'lorem-blaster' ) );
 		}
 
+		// Process checkboxes
 		$content_image  = isset( $_POST['content_image'] );
 		$featured_image = isset( $_POST['featured_image'] );
 		$auto_terms     = isset( $_POST['auto_terms'] );
@@ -535,9 +546,12 @@ class Lorem_Blaster {
 	}
 
 	private function load_media_dependencies() {
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-		require_once ABSPATH . 'wp-admin/includes/media.php';
-		require_once ABSPATH . 'wp-admin/includes/image.php';
+		// Only load if functions don't already exist
+		if ( ! function_exists( 'media_handle_sideload' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+			require_once ABSPATH . 'wp-admin/includes/media.php';
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+		}
 	}
 
 	private function download_image( $source, &$used_fallback = false, &$failed = false ) {
